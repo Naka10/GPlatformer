@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Бесконечный раннер — эталон (EndlessRunner_v1_Etalon)</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #24283b; color: #e7e9ee; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; }
+  canvas { background: linear-gradient(#84c8ff, #b8e1ff 55%, #f5f5f7 55%); width: 100vw; height: 100vh; display: block; touch-action: manipulation; }
+  .hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; pointer-events: none; z-index: 3; }
+  .box { background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 10px; font-weight: 700; }
+  .center { position: fixed; inset: 0; display: grid; place-items: center; z-index: 2; }
+  .overlay { text-align:center; background: rgba(0,0,0,0.45); padding:16px 22px; border-radius:14px; border:1px solid rgba(255,255,255,0.12); }
+
+  /* === Красивое главное меню (НЕ меняет геймплей) === */
+  #menu { padding: 24px; }
+  .menu-card { width: min(780px, 92vw); padding: 28px; border-radius: 20px; backdrop-filter: blur(10px); background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 20px 70px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18); color: #0a0a0a; }
+  .menu-inner { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; align-items: center; }
+  @media (max-width: 720px){ .menu-inner { grid-template-columns: 1fr; } }
+
+  .title-wrap { text-align: left; color: #0b1220; }
+  .game-title { margin: 0 0 8px; font-size: clamp(26px, 5vw, 42px); font-weight: 900; letter-spacing: 0.2px; background: linear-gradient(180deg,#111827,#334155); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .rules { margin: 0 0 16px; font-size: clamp(14px, 2.6vw, 16px); color: #1f2937; opacity: 0.95; line-height: 1.45; }
+  .start-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 22px; border-radius: 14px; font-weight: 800; font-size: clamp(16px, 3.5vw, 18px); cursor: pointer; color: #06121a; border: 1px solid rgba(255,255,255,0.6); background: linear-gradient(180deg,#7dfcc5,#3fe1ff); box-shadow: 0 10px 24px rgba(63,225,255,0.45), inset 0 1px 0 rgba(255,255,255,0.6); position: relative; overflow: hidden; transition: transform .08s ease, box-shadow .2s ease; }
+  .start-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(63,225,255,0.55), inset 0 1px 0 rgba(255,255,255,0.8); }
+  .start-btn:active { transform: translateY(1px); }
+  .start-btn::before { content:""; position:absolute; inset:-2px; background: radial-gradient(800px 120px at -20% 0%, rgba(255,255,255,0.55), transparent 60%); transform: translateX(-60%); animation: shine 3.2s linear infinite; pointer-events:none; }
+  @keyframes shine { 0%{ transform: translateX(-70%);} 55%{ transform: translateX(120%);} 100%{ transform: translateX(120%);} }
+
+  .splash { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; }
+  .splash svg { width: 100%; height: auto; filter: drop-shadow(0 20px 40px rgba(16,24,40,0.35)); }
+  .float { animation: float 3.5s ease-in-out infinite; transform-origin: center; }
+  @keyframes float { 0%{ transform: translateY(0);} 50%{ transform: translateY(-6px);} 100%{ transform: translateY(0);} }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud">
+  <div class="box" id="score">Счёт: 0</div>
+  <div class="box" id="hi">Рекорд: 0</div>
+</div>
+<!-- Главное меню с абстрактной сценой и обновлённым текстом правил -->
+<div class="center" id="menu">
+  <div class="menu-card">
+    <div class="menu-inner">
+      <div class="title-wrap">
+        <h1 class="game-title">Endless Runner</h1>
+        <p class="rules">
+          <strong>Цель:</strong> беги как можно дальше, <em>перепрыгивай препятствия</em> и набирай очки.<br/>
+          <strong>Очки:</strong> +10 за непродвигаемые препятствия (ящик, яма), +20 за движущиеся (дрон).<br/>
+          <strong>Управление:</strong> Desktop — <kbd>Space</kbd>/<kbd>↑</kbd> для прыжка. Mobile — тап по экрану.
+        </p>
+        <div class="start-btn" id="startBtn" role="button" aria-label="Start Game">▶ Старт</div>
+      </div>
+      <div class="splash" aria-hidden="true">
+        <!-- Абстрактная платформерная сцена (без главного персонажа) -->
+        <svg viewBox="0 0 520 390" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#9ed9ff"/>
+              <stop offset="60%" stop-color="#d9f0ff"/>
+              <stop offset="61%" stop-color="#f0f3f8"/>
+              <stop offset="100%" stop-color="#f7f8fb"/>
+            </linearGradient>
+            <linearGradient id="gHill1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#a5c8ea"/>
+              <stop offset="100%" stop-color="#7fb1e0"/>
+            </linearGradient>
+            <linearGradient id="gHill2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#88b7de"/>
+              <stop offset="100%" stop-color="#5fa0d6"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="520" height="390" fill="url(#gSky)"/>
+          <!-- Солнце и облака -->
+          <g>
+            <circle cx="86" cy="76" r="24" fill="#ffd96a" opacity="0.9"/>
+            <g fill="#fff" opacity="0.9">
+              <ellipse class="float" cx="140" cy="90" rx="44" ry="20"/>
+              <ellipse class="float" cx="180" cy="82" rx="24" ry="16"/>
+              <ellipse class="float" cx="360" cy="78" rx="42" ry="18"/>
+              <ellipse class="float" cx="392" cy="72" rx="22" ry="14"/>
+            </g>
+          </g>
+          <!-- Дальние холмы -->
+          <path d="M0 240 C 90 200, 180 260, 260 230 C 340 200, 430 250, 520 220 L 520 390 L 0 390 Z" fill="url(#gHill1)" opacity="0.8"/>
+          <path d="M0 270 C 110 230, 200 300, 300 270 C 380 250, 480 300, 520 280 L 520 390 L 0 390 Z" fill="url(#gHill2)" opacity="0.95"/>
+          <!-- Платформы и декор -->
+          <g>
+            <rect x="40" y="310" width="140" height="16" rx="6" fill="#2a742a"/>
+            <rect x="60" y="326" width="100" height="18" rx="6" fill="#245924"/>
+            <rect x="220" y="300" width="150" height="16" rx="6" fill="#2a742a"/>
+            <rect x="240" y="316" width="110" height="18" rx="6" fill="#245924"/>
+            <rect x="400" y="320" width="80" height="16" rx="6" fill="#2a742a"/>
+            <rect x="410" y="336" width="60" height="18" rx="6" fill="#245924"/>
+            <!-- монетки как абстрактные награды -->
+            <g fill="#ffd54a" opacity="0.9">
+              <circle cx="250" cy="280" r="6"/>
+              <circle cx="270" cy="272" r="6"/>
+              <circle cx="290" cy="280" r="6"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="center" id="gameOver" style="display:none">
+  <div class="overlay">
+    <h2 style="margin:0 0 8px">Поражение</h2>
+    <p style="margin:6px 0">Счёт: <span id="finalScore">0</span></p>
+    <div class="start-btn" id="restartBtn" style="padding:12px 18px; font-size:16px;">Перезапустить игру</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // === Геймплейные параметры (эталон) ===
+  const JUMP_INITIAL_VY   = -500;   // px/s
+  const GRAVITY_ASCEND    = 650;    // px/s^2
+  const GRAVITY_ASCEND_CUT= 1200;   // px/s^2
+  const GRAVITY_DESCEND   = 1700;   // px/s^2
+  const TERMINAL_VY_UP    = -900;   // px/s
+  const TERMINAL_VY_DOWN  = 1600;   // px/s
+
+  const START_SPEED   = 120;  // px/s
+  const ACCEL_PER_S   = 4;    // px/s^2
+  const MAX_SPEED     = 320;  // px/s
+
+  const PLAYER = { W: 42, H: 46, X: 110 };
+  const COYOTE_TIME   = 0.10; // s
+  const JUMP_BUFFER   = 0.12; // s
+
+  const MIN_SAFE_GAP  = 180;  // px
+  const PIT_SAFETY    = 70;   // px
+  const INITIAL_MAX_GAP = 420; // px — ограничение максимального зазора только для стартовой предгенерации
+
+  // === Canvas/setup ===
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W, H; function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+  window.addEventListener('resize', resize); resize();
+
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const menu = document.getElementById('menu');
+  const over = document.getElementById('gameOver');
+  const scoreBox = document.getElementById('score');
+  const hiBox = document.getElementById('hi');
+  const finalScoreEl = document.getElementById('finalScore');
+
+  let hi = 0; try { hi = +localStorage.getItem('runner.hi')||0; } catch(_) {}
+  hiBox.textContent = 'Рекорд: ' + hi;
+
+  const groundY = () => Math.floor(H - 64);
+
+  const player = { x: PLAYER.X, y: 0, w: PLAYER.W, h: PLAYER.H, vy: 0, onGround: false, coyote: 0, jumpBuf: 0, jumpHeld:false };
+  let obstacles = []; // {x,y,w,h,type,passed,phase?}
+  let speed = START_SPEED;
+  let score = 0;
+  let started = false;
+  let nextSpawnDist = 260; let distSinceSpawn = 0;
+
+  // === Визуальные состояния (не влияют на геймплей) ===
+  const V = { t: 0, clouds: [], particles: [] };
+  const SKY = { sun: { x: 120, y: 100, r: 46 } };
+  function spawnCloud(offX=0){
+    const layer = Math.random()<0.5? 0: 1; // 0 дальний / 1 ближний
+    const scale = layer? (0.9 + Math.random()*0.5) : (0.6 + Math.random()*0.4);
+    const yBase = H*0.18 + Math.random()*H*0.22;
+    V.clouds.push({ x: Math.random()*W + offX, y: yBase, s: scale, a: layer? 0.9: 0.6, layer });
+  }
+  function initSky(){ V.clouds.length = 0; const count = Math.max(8, Math.ceil(W/180)); for(let i=0;i<count;i++) spawnCloud(); }
+  function addDustBurst(x,y){ for(let i=0;i<8;i++){ V.particles.push({ x, y, vx:(Math.random()*60-30), vy:-(80+Math.random()*60), life:0.35, age:0 }); } }
+
+  // === Математика прыжка для генерации ===
+  function airtimeSec(){ const h = (JUMP_INITIAL_VY*JUMP_INITIAL_VY)/(2*GRAVITY_ASCEND); const tUp = Math.abs(JUMP_INITIAL_VY)/GRAVITY_ASCEND; const tDown = Math.sqrt(Math.max(0, 2*h/GRAVITY_DESCEND)); return tUp + tDown; }
+  function maxJumpDistance(currentSpeed){ return currentSpeed * airtimeSec(); }
+  function clampedPitWidth(currentSpeed){ const maxDist = maxJumpDistance(currentSpeed) - PIT_SAFETY; return Math.max(80, Math.min(240, Math.floor(maxDist))); }
+
+  function planNextSpawn(){ const minGap = Math.max(MIN_SAFE_GAP, Math.floor(maxJumpDistance(speed)*0.55)); const maxGap = minGap + 180; nextSpawnDist = minGap + Math.random()*(maxGap-minGap); distSinceSpawn = 0; }
+  function spawnObstacle(){ const choice = Math.random(); if(choice<0.33){ const w=Math.min(clampedPitWidth(speed),240); obstacles.push({type:'pit',x:W+40,y:groundY(),w,h:H-groundY(),passed:false}); } else if(choice<0.7){ const w=44,h=42; const y=groundY()-h; obstacles.push({type:'box',x:W+40,y,w,h,passed:false}); } else { const w=46,h=30; const y=groundY()-120+(Math.random()*40-20); obstacles.push({type:'drone',x:W+40,y,w,h,passed:false,phase:Math.random()*Math.PI*2}); } planNextSpawn(); }
+
+  // === Игровой цикл (dt) ===
+  let lastT = 0; let prevOnGround = true;
+  function loop(t){ if(!started) return; if(!lastT) lastT = t; let dt = (t-lastT)/1000; if(dt>0.033) dt=0.033; lastT = t; update(dt); draw(); requestAnimationFrame(loop); }
+
+  function update(dt){
+    // Геймплей (без изменений)
+    speed = Math.min(MAX_SPEED, speed + ACCEL_PER_S * dt);
+    player.coyote = player.onGround ? COYOTE_TIME : Math.max(0, player.coyote - dt);
+    player.jumpBuf = Math.max(0, player.jumpBuf - dt);
+    if((player.onGround || player.coyote>0) && player.jumpBuf>0){ player.vy = JUMP_INITIAL_VY; player.onGround=false; player.coyote=0; player.jumpBuf=0; }
+    if(player.vy < 0){ const g = player.jumpHeld ? GRAVITY_ASCEND : GRAVITY_ASCEND_CUT; player.vy = Math.max(TERMINAL_VY_UP, player.vy + g*dt); }
+    else { player.vy = Math.min(TERMINAL_VY_DOWN, player.vy + GRAVITY_DESCEND*dt); }
+    player.y += player.vy * dt;
+
+    const gy = groundY();
+    prevOnGround = player.onGround;
+    if(player.y > gy - player.h){ player.y = gy - player.h; player.vy=0; player.onGround=true; } else { player.onGround=false; }
+
+    for(const o of obstacles){ o.x -= speed*dt; if(o.type==='drone'){ o.phase += 3*dt; o.y += Math.sin(o.phase)*20*dt; } }
+    obstacles = obstacles.filter(o => o.x + o.w > -80);
+
+    distSinceSpawn += speed*dt; if(distSinceSpawn >= nextSpawnDist) spawnObstacle();
+
+    const footX = player.x + player.w*0.5;
+    for(const o of obstacles){
+      if(o.type==='pit'){
+        if(!o.passed && (o.x + o.w) < player.x){ o.passed = true; addScore(10); }
+        const footY = player.y + player.h; if(footX>o.x && footX<o.x+o.w && footY>gy){ return gameOver(); }
+      } else {
+        if(rect(player.x,player.y,player.w,player.h, o.x,o.y,o.w,o.h)) return gameOver();
+        if(!o.passed && (o.x + o.w) < player.x){ o.passed = true; addScore(o.type==='drone'?20:10); }
+      }
+    }
+
+    // Визуальные анимации
+    V.t += dt;
+    for(const c of V.clouds){ const base=12; const par=c.layer?1.0:0.4; c.x -= (base + speed*0.25*par)*dt; if(c.x < -200*c.s){ c.x = W + Math.random()*200; c.y = H*0.18 + Math.random()*H*0.22; } }
+    for(let i=V.particles.length-1;i>=0;i--){ const p=V.particles[i]; p.age+=dt; if(p.age>=p.life){ V.particles.splice(i,1); continue; } p.vy += 2000*dt; p.x += p.vx*dt; p.y += p.vy*dt; }
+    if(!prevOnGround && player.onGround){ addDustBurst(player.x+player.w*0.5, gy-2); }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const gy = groundY();
+    drawSkyGradient(); drawSun(); drawMountainsLayer(0.12, '#a5c8ea', 0.7); drawMountainsLayer(0.18, '#7fb1e0', 1.0); drawClouds();
+    drawGround(gy);
+    for(const o of obstacles){ if(o.type==='pit'){ continue; } else if(o.type==='box'){ drawCrate(o.x,o.y,o.w,o.h); } else { drawDrone(o.x,o.y,o.w,o.h); } }
+    drawPlayer(gy);
+    drawDust();
+  }
+
+  // === Рендер-помощники ===
+  function drawSkyGradient(){ const g = ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#86c9ff'); g.addColorStop(0.55,'#bfe6ff'); g.addColorStop(0.56,'#e9ecf1'); g.addColorStop(1,'#f5f6f8'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
+  function drawSun(){ const s=SKY.sun; ctx.save(); ctx.globalAlpha=0.8; ctx.fillStyle='#ffd96a'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=0.3; for(let r=1;r<=3;r++){ ctx.beginPath(); ctx.arc(s.x,s.y,s.r+r*20,0,Math.PI*2); ctx.fill(); } ctx.restore(); }
+  function drawMountainsLayer(freq,color,alpha){ ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle=color; ctx.beginPath(); const base=H*0.62; ctx.moveTo(0,H); ctx.lineTo(0,base); for(let x=0;x<=W;x+=8){ const y=base-16-Math.sin((x+V.t*60)*freq*0.004)*10; ctx.lineTo(x,y);} ctx.lineTo(W,H); ctx.closePath(); ctx.fill(); ctx.restore(); }
+  function drawClouds(){ for(const c of V.clouds) drawCloud(c); }
+  function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.scale(c.s,c.s); ctx.globalAlpha=c.a; ctx.fillStyle='#fff'; blobby(0,0,42); blobby(28,-10,26); blobby(-28,-6,24); blobby(12,-18,18); ctx.restore(); }
+  function blobby(x,y,r){ ctx.beginPath(); ctx.ellipse(x,y,r*1.4,r,0,0,Math.PI*2); ctx.fill(); }
+  function drawGround(gy){ const gg=ctx.createLinearGradient(0,gy-18,0,gy+40); gg.addColorStop(0,'#3a913a'); gg.addColorStop(1,'#256a25'); ctx.fillStyle=gg; ctx.fillRect(0,gy,W,H-gy); ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(0,gy-4,W,4); ctx.fillStyle='rgba(255,255,255,0.08)'; for(let x=-(V.t*40%40); x<W; x+=40){ ctx.fillRect(x,gy-8,24,4); } }
+  function drawCrate(x,y,w,h){ ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.strokeStyle='#6e4b29'; ctx.lineWidth=3; ctx.strokeRect(x+1.5,y+1.5,w-3,h-3); ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x+6,y+h*0.33); ctx.lineTo(x+w-6,y+h*0.33); ctx.moveTo(x+6,y+h*0.66); ctx.lineTo(x+w-6,y+h*0.66); ctx.moveTo(x+w*0.33,y+6); ctx.lineTo(x+w*0.33,y+h-6); ctx.moveTo(x+w*0.66,y+6); ctx.lineTo(x+w*0.66,y+h-6); ctx.stroke(); ctx.restore(); }
+  function drawDrone(x,y,w,h){ ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#96a3b8'); g.addColorStop(1,'#647087'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.fillStyle='#2aff7b'; const blink=(Math.sin(V.t*8)+1)*0.5; const ey=y+h*0.5-3; ctx.fillRect(x+6+blink,ey,8,4); ctx.fillRect(x+w-14-blink,ey,8,4); ctx.globalAlpha=0.6; ctx.fillStyle='#dfe6f5'; const spin=(V.t*16)%1; const bw=w*0.7,bh=3; ctx.fillRect(x+(w-bw)/2,y-8,bw*(0.6+0.4*Math.abs(Math.sin(spin))),bh); ctx.fillRect(x+(w-bw)/2,y+h+5,bw*(0.6+0.4*Math.abs(Math.cos(spin))),bh); ctx.restore(); }
+
+  // Простой милый персонаж-бобик
+  function drawPlayer(gy){
+    const px = player.x, py = player.y, pw = player.w, ph = player.h; const t = V.t; const inAir = !player.onGround;
+    // тень
+    ctx.globalAlpha = 0.28; ctx.fillStyle = '#000';
+    const shw = 18 * (1 - Math.min(1, (gy - (player.y+player.h))/48));
+    ctx.beginPath(); ctx.ellipse(px+pw*0.5, gy+2, Math.max(8,shw), 6, 0, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
+    // squash & stretch
+    let sx=1, sy=1; if(inAir){ sy = 1 + 0.08; sx = 1/sy; } else { sy = 1 - 0.06*Math.abs(Math.sin(t*16)); sx = 1/sy; }
+    ctx.save(); ctx.translate(px+pw*0.5, py+ph*0.55); ctx.scale(sx, sy); ctx.translate(-pw*0.5, -ph*0.55);
+    // тело
+    let gBody = ctx.createLinearGradient(0, ph*0.20, 0, ph*0.95); gBody.addColorStop(0,'#ffd4e2'); gBody.addColorStop(1,'#ff9fc2'); ctx.fillStyle=gBody; ctx.beginPath(); ctx.ellipse(pw*0.50, ph*0.58, pw*0.38, ph*0.46, 0, 0, Math.PI*2); ctx.fill();
+    // лицо
+    const blink = inAir ? 1 : Math.max(0.25, 0.85 + 0.15*Math.sin(t*5)); ctx.fillStyle='#222'; ctx.beginPath(); ctx.ellipse(pw*0.44, ph*0.50, 2.6, 3.6*blink, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.56, ph*0.50, 2.6, 3.6*blink, 0, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle='#222'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(pw*0.50, ph*0.54, 6, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke(); ctx.fillStyle='rgba(255,120,120,0.25)'; ctx.beginPath(); ctx.ellipse(pw*0.38, ph*0.54, 6, 3.5, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.62, ph*0.54, 6, 3.5, 0, 0, Math.PI*2); ctx.fill();
+    // руки
+    ctx.fillStyle='#ff9fc2'; const armSwing = Math.sin(t*16)*(inAir?0.2:0.6); ctx.save(); ctx.translate(pw*0.27, ph*0.62); ctx.rotate(-0.6*armSwing); ctx.translate(-pw*0.27, -ph*0.62); rounded(pw*0.24, ph*0.60, pw*0.10, ph*0.08, 8); ctx.restore(); ctx.save(); ctx.translate(pw*0.73, ph*0.62); ctx.rotate(0.6*armSwing); ctx.translate(-pw*0.73, -ph*0.62); rounded(pw*0.66, ph*0.60, pw*0.10, ph*0.08, 8); ctx.restore();
+    // ноги
+    const step = Math.sin(t*20); const lift = inAir ? -4 : 0; ctx.fillStyle = '#2c2c2c'; ctx.beginPath(); ctx.ellipse(pw*0.44, ph*0.94+lift + step*1.0, 5.5, 3.2, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.56, ph*0.94+lift - step*1.0, 5.5, 3.2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    function rounded(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r); ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath(); ctx.fill(); }
+  }
+
+  function drawDust(){ for(const p of V.particles){ const k = 1 - (p.age/p.life); if(k<=0) continue; ctx.globalAlpha = Math.max(0, k*0.5); ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(p.x,p.y, 2+2*k, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; } }
+
+  // === Утилиты/сервис ===
+  function rect(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
+  function addScore(n){ score += n; scoreBox.textContent = 'Счёт: ' + score; }
+
+  function startGame(){ reset(); started = true; menu.style.display='none'; over.style.display='none'; lastT = 0; requestAnimationFrame(loop); }
+  function gameOver(){ if(!started) return; started = false; finalScoreEl.textContent = String(score); over.style.display='grid'; try { if(score>hi){ hi=score; localStorage.setItem('runner.hi', String(hi)); hiBox.textContent = 'Рекорд: ' + hi; } } catch(_) {} }
+
+  function requestJump(){ player.jumpBuf = JUMP_BUFFER; player.jumpHeld = true; }
+  function releaseJump(){ player.jumpHeld = false; }
+
+  // Оригинальные обработчики (эти работали стабильно)
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+  window.addEventListener('keydown', e => { if(e.code==='Space'||e.code==='ArrowUp'){ if(!player.jumpHeld) requestJump(); } if(e.code==='KeyR' && !started){ startGame(); } });
+  window.addEventListener('keyup', e => { if(e.code==='Space'||e.code==='ArrowUp') releaseJump(); });
+  canvas.addEventListener('pointerdown', requestJump);
+  canvas.addEventListener('pointerup', releaseJump);
+  canvas.addEventListener('pointercancel', releaseJump);
+  canvas.addEventListener('pointerleave', releaseJump);
+
+  // === init/reset ===
+  function reset(){
+    score = 0; scoreBox.textContent = 'Счёт: ' + score; obstacles.length = 0; speed = START_SPEED;
+    Object.assign(player, { x: PLAYER.X, y: groundY() - player.h, w: PLAYER.W, h: PLAYER.H, vy: 0, onGround: true, coyote: 0, jumpBuf: 0, jumpHeld:false });
+
+    // Предгенерация цепочки препятствий с ограничением больших зазоров
+    obstacles.length = 0; let acc = 0; const targetPreGenDist = Math.max(1200, Math.floor(W * 1.8));
+    planNextSpawn();
+    while (acc < targetPreGenDist) {
+      const gap = Math.min(nextSpawnDist, INITIAL_MAX_GAP);
+      distSinceSpawn = nextSpawnDist; // форсим спавн
+      spawnObstacle();
+      const o = obstacles[obstacles.length - 1];
+      o.x = (W + 40) + acc; // раскладываем по ленте вправо
+      acc += gap; // накапливаем с ограниченным зазором
+    }
+    // Сдвигаем ленту ближе к игроку в начале
+    if (obstacles.length) {
+      const ahead = Math.max(MIN_SAFE_GAP, 260);
+      const delta = obstacles[0].x - (player.x + ahead);
+      for (const o of obstacles) o.x -= delta;
+    }
+
+    V.particles.length = 0; initSky();
+  }
+  planNextSpawn(); initSky();
+
+  // ============ SAFE PATCH A: добавляем новые визуальные функции и переопределяем draw ============
+  // Новый многоуровневый фон + «море» на горизонте. Геймплей не меняется.
+  function drawParallaxBackdrop(){
+    // дальние «горы» — холоднее и светлее
+    drawMountainsLayer(0.10, '#a7c9ea', 0.55);
+    // средние «холмы» — насыщеннее
+    drawMountainsLayer(0.16, '#7fb1e0', 0.95);
+    // ближний мягкий гребень — чуть зеленее, создаёт глубину
+    ctx.save();
+    ctx.fillStyle = '#8ac6a0';
+    ctx.globalAlpha = 0.9;
+    const base = H*0.66;
+    ctx.beginPath();
+    ctx.moveTo(0,H);
+    ctx.lineTo(0,base);
+    for(let x=0; x<=W; x+=6){
+      const y = base - 10 - Math.sin((x + V.t*80)*0.015)*6 - Math.cos((x*0.5 + V.t*30)*0.01)*3;
+      ctx.lineTo(x,y);
+    }
+    ctx.lineTo(W,H);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSea(gy){
+    const top = Math.min(gy - 42, H*0.74);
+    const height = Math.max(16, Math.min(40, gy - top - 8));
+    if(height < 12) return;
+
+    const water = ctx.createLinearGradient(0, top, 0, top+height);
+    water.addColorStop(0, '#b8e7ff');
+    water.addColorStop(1, '#79c7ff');
+    ctx.fillStyle = water;
+    ctx.fillRect(0, top, W, height);
+
+    const layers = [ {amp: 6, freq: 0.018, speed: 40, alpha: 0.25}, {amp: 4, freq: 0.026, speed: 65, alpha: 0.35}, {amp: 2.5, freq: 0.038, speed: 90, alpha: 0.45} ];
+    for(const L of layers){
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(0, top + height*0.5);
+      for(let x=0; x<=W; x+=4){
+        const y = top + height*0.5 + Math.sin((x + V.t*L.speed)*L.freq) * L.amp;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, top+height);
+      ctx.lineTo(0, top+height);
+      ctx.closePath();
+      ctx.globalAlpha = L.alpha;
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  const __origDraw = draw; // сохранить исходную отрисовку (на всякий случай)
+  // Переопределяем draw, добавляя новые слои — геймплей не трогаем
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const gy = groundY();
+
+    // Небо и задники
+    drawSkyGradient();
+    drawSun();
+    drawParallaxBackdrop();
+    drawClouds();
+
+    // «Море/река» на горизонте
+    drawSea(gy);
+
+    // Земля
+    drawGround(gy);
+
+    // Препятствия
+    for(const o of obstacles){ if(o.type==='pit'){ continue; } else if(o.type==='box'){ drawCrate(o.x,o.y,o.w,o.h); } else { drawDrone(o.x,o.y,o.w,o.h); } }
+
+    // Игрок и частицы
+    drawPlayer(gy);
+    drawDust();
+  }
+
+})();
+</script>
+</body>
+</html>
