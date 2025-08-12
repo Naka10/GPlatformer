@@ -136,6 +136,76 @@
   const PIT_SAFETY    = 70;   // px
   const INITIAL_MAX_GAP = 420; // px — ограничение максимального зазора только для стартовой предгенерации
 
+  // === Ассеты и загрузка (добавлено). Позволяет подменять графику без изменения геймплея ===
+  // Манифест с ПЛЕЙСХОЛДЕРАМИ. Положите свои файлы в ./assets/ и замените имена ниже — остальной код трогать не нужно.
+  const ASSETS = {
+    images: {
+      player_run: './assets/player_run.png',   // спрайт-лист бега (например, 6 кадров в ряд)
+      player_jump:'./assets/player_jump.png',  // одиночный кадр прыжка (или 1-кадровый спрайт-лист)
+      box:        './assets/box.png',          // картинка ящика
+      drone:      './assets/drone.png'         // картинка дрона
+    },
+    sounds: {
+      jump: './assets/jump.mp3',               // звук прыжка (по желанию)
+      score:'./assets/score.mp3'               // звук очков (по желанию)
+    }
+  };
+
+  // Контейнеры загруженных ресурсов
+  const IMG = {};            // изображения по ключам из ASSETS.images
+  const SND = {};            // аудио по ключам из ASSETS.sounds
+  const SPRITES = {          // подготовленные объекты для удобного рисования
+    player: null,            // AnimatedSprite для бега
+    playerJump: null,        // AnimatedSprite для прыжка
+    box: null,               // Image для ящика
+    drone: null              // Image для дрона
+  };
+  let assetsReady = false;   // когда true — можно запускать игру (кнопка Start активна)
+
+  // Класс анимированного спрайта (кадровая лента)
+  class AnimatedSprite {
+    constructor(img, frames=1, fps=10){ this.img=img; this.frames=frames; this.fps=fps; }
+    frame(t){ return Math.floor(t*this.fps) % this.frames; }
+    draw(ctx, x,y,w,h, t){ const sw=this.img.width/this.frames; const sh=this.img.height; const f=this.frame(t); ctx.drawImage(this.img, f*sw, 0, sw, sh, x, y, w, h); }
+  }
+
+  // Загрузка изображений
+  function loadImages(manifest){
+    const jobs = Object.entries(manifest).map(([k,src])=> new Promise((res,rej)=>{
+      const im = new Image();
+      im.onload = ()=>{ IMG[k]=im; res(); };
+      im.onerror = ()=> rej(new Error('Image load failed: '+src));
+      im.src = src; // относительные пути дружат с GitHub Pages
+    }));
+    return Promise.all(jobs);
+  }
+  // Загрузка звуков (опционально, с фолбэком)
+  function loadSounds(manifest){
+    const jobs = Object.entries(manifest).map(([k,src])=>
+      fetch(src).then(r=>{ if(!r.ok) throw new Error('Audio 404: '+src); return r.blob(); })
+                .then(b=>{ SND[k] = new Audio(URL.createObjectURL(b)); })
+    );
+    return Promise.allSettled(jobs); // не блокируем игру, если звуки отсутствуют
+  }
+  // Инициализация SPRITES из загруженных IMG
+  function buildSprites(){
+    if(IMG.player_run)  SPRITES.player     = new AnimatedSprite(IMG.player_run, 6, 12); // 6 кадров @ 12fps — поменяете в соответствии со своим файлом
+    if(IMG.player_jump) SPRITES.playerJump = new AnimatedSprite(IMG.player_jump, 1,  1);
+    if(IMG.box)         SPRITES.box   = IMG.box;
+    if(IMG.drone)       SPRITES.drone = IMG.drone;
+  }
+  // Полная инициализация ассетов с блокировкой кнопки Start до готовности
+  function initAssets(){
+    if(startBtn){ startBtn.style.pointerEvents='none'; startBtn.style.opacity='0.6'; startBtn.textContent='Загрузка…'; }
+    return Promise.all([
+      loadImages(ASSETS.images),
+      loadSounds(ASSETS.sounds)
+    ]).then(()=>{ buildSprites(); assetsReady=true; })
+      .catch(()=>{ assetsReady=true; /* даже если что-то не загрузилось — позволим стартовать на векторном фолбэке */ })
+      .finally(()=>{ if(startBtn){ startBtn.textContent='▶ Старт'; startBtn.style.pointerEvents='auto'; startBtn.style.opacity='1'; } });
+  }
+
+
   // === Canvas/setup ===
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -241,26 +311,36 @@
   function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.scale(c.s,c.s); ctx.globalAlpha=c.a; ctx.fillStyle='#fff'; blobby(0,0,42); blobby(28,-10,26); blobby(-28,-6,24); blobby(12,-18,18); ctx.restore(); }
   function blobby(x,y,r){ ctx.beginPath(); ctx.ellipse(x,y,r*1.4,r,0,0,Math.PI*2); ctx.fill(); }
   function drawGround(gy){ const gg=ctx.createLinearGradient(0,gy-18,0,gy+40); gg.addColorStop(0,'#3a913a'); gg.addColorStop(1,'#256a25'); ctx.fillStyle=gg; ctx.fillRect(0,gy,W,H-gy); ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(0,gy-4,W,4); ctx.fillStyle='rgba(255,255,255,0.08)'; for(let x=-(V.t*40%40); x<W; x+=40){ ctx.fillRect(x,gy-8,24,4); } }
-  function drawCrate(x,y,w,h){ ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.strokeStyle='#6e4b29'; ctx.lineWidth=3; ctx.strokeRect(x+1.5,y+1.5,w-3,h-3); ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x+6,y+h*0.33); ctx.lineTo(x+w-6,y+h*0.33); ctx.moveTo(x+6,y+h*0.66); ctx.lineTo(x+w-6,y+h*0.66); ctx.moveTo(x+w*0.33,y+6); ctx.lineTo(x+w*0.33,y+h-6); ctx.moveTo(x+w*0.66,y+6); ctx.lineTo(x+w*0.66,y+h-6); ctx.stroke(); ctx.restore(); }
-  function drawDrone(x,y,w,h){ ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#96a3b8'); g.addColorStop(1,'#647087'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.fillStyle='#2aff7b'; const blink=(Math.sin(V.t*8)+1)*0.5; const ey=y+h*0.5-3; ctx.fillRect(x+6+blink,ey,8,4); ctx.fillRect(x+w-14-blink,ey,8,4); ctx.globalAlpha=0.6; ctx.fillStyle='#dfe6f5'; const spin=(V.t*16)%1; const bw=w*0.7,bh=3; ctx.fillRect(x+(w-bw)/2,y-8,bw*(0.6+0.4*Math.abs(Math.sin(spin))),bh); ctx.fillRect(x+(w-bw)/2,y+h+5,bw*(0.6+0.4*Math.abs(Math.cos(spin))),bh); ctx.restore(); }
+  function drawCrate(x,y,w,h){
+    // Если есть подключённая картинка ящика — используем её
+    if(SPRITES.box){ ctx.drawImage(SPRITES.box, x, y, w, h); return; }
+     ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.strokeStyle='#6e4b29'; ctx.lineWidth=3; ctx.strokeRect(x+1.5,y+1.5,w-3,h-3); ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x+6,y+h*0.33); ctx.lineTo(x+w-6,y+h*0.33); ctx.moveTo(x+6,y+h*0.66); ctx.lineTo(x+w-6,y+h*0.66); ctx.moveTo(x+w*0.33,y+6); ctx.lineTo(x+w*0.33,y+h-6); ctx.moveTo(x+w*0.66,y+6); ctx.lineTo(x+w*0.66,y+h-6); ctx.stroke(); ctx.restore(); }
+  function drawDrone(x,y,w,h){
+    // Если есть подключённая картинка дрона — используем её
+    if(SPRITES.drone){ ctx.drawImage(SPRITES.drone, x, y, w, h); return; }
+     ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#96a3b8'); g.addColorStop(1,'#647087'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.fillStyle='#2aff7b'; const blink=(Math.sin(V.t*8)+1)*0.5; const ey=y+h*0.5-3; ctx.fillRect(x+6+blink,ey,8,4); ctx.fillRect(x+w-14-blink,ey,8,4); ctx.globalAlpha=0.6; ctx.fillStyle='#dfe6f5'; const spin=(V.t*16)%1; const bw=w*0.7,bh=3; ctx.fillRect(x+(w-bw)/2,y-8,bw*(0.6+0.4*Math.abs(Math.sin(spin))),bh); ctx.fillRect(x+(w-bw)/2,y+h+5,bw*(0.6+0.4*Math.abs(Math.cos(spin))),bh); ctx.restore(); }
 
   // Простой милый персонаж-бобик
   function drawPlayer(gy){
+    // === Общая тень персонажа (и для спрайтов, и для векторного фолбэка) ===
     const px = player.x, py = player.y, pw = player.w, ph = player.h; const t = V.t; const inAir = !player.onGround;
-    // тень
     ctx.globalAlpha = 0.28; ctx.fillStyle = '#000';
     const shw = 18 * (1 - Math.min(1, (gy - (player.y+player.h))/48));
     ctx.beginPath(); ctx.ellipse(px+pw*0.5, gy+2, Math.max(8,shw), 6, 0, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
-    // squash & stretch
+
+    // === Если подключены спрайты — рисуем их и выходим ===
+    if(SPRITES.player){
+      const stateJump = inAir && SPRITES.playerJump;
+      if(stateJump) SPRITES.playerJump.draw(ctx, px, py, pw, ph, t); else SPRITES.player.draw(ctx, px, py, pw, ph, t);
+      return; // векторный фолбэк ниже не нужен
+    }
+
+    // === Векторный фолбэк (как в эталоне) ===
     let sx=1, sy=1; if(inAir){ sy = 1 + 0.08; sx = 1/sy; } else { sy = 1 - 0.06*Math.abs(Math.sin(t*16)); sx = 1/sy; }
     ctx.save(); ctx.translate(px+pw*0.5, py+ph*0.55); ctx.scale(sx, sy); ctx.translate(-pw*0.5, -ph*0.55);
-    // тело
     let gBody = ctx.createLinearGradient(0, ph*0.20, 0, ph*0.95); gBody.addColorStop(0,'#ffd4e2'); gBody.addColorStop(1,'#ff9fc2'); ctx.fillStyle=gBody; ctx.beginPath(); ctx.ellipse(pw*0.50, ph*0.58, pw*0.38, ph*0.46, 0, 0, Math.PI*2); ctx.fill();
-    // лицо
     const blink = inAir ? 1 : Math.max(0.25, 0.85 + 0.15*Math.sin(t*5)); ctx.fillStyle='#222'; ctx.beginPath(); ctx.ellipse(pw*0.44, ph*0.50, 2.6, 3.6*blink, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.56, ph*0.50, 2.6, 3.6*blink, 0, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle='#222'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(pw*0.50, ph*0.54, 6, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke(); ctx.fillStyle='rgba(255,120,120,0.25)'; ctx.beginPath(); ctx.ellipse(pw*0.38, ph*0.54, 6, 3.5, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.62, ph*0.54, 6, 3.5, 0, 0, Math.PI*2); ctx.fill();
-    // руки
     ctx.fillStyle='#ff9fc2'; const armSwing = Math.sin(t*16)*(inAir?0.2:0.6); ctx.save(); ctx.translate(pw*0.27, ph*0.62); ctx.rotate(-0.6*armSwing); ctx.translate(-pw*0.27, -ph*0.62); rounded(pw*0.24, ph*0.60, pw*0.10, ph*0.08, 8); ctx.restore(); ctx.save(); ctx.translate(pw*0.73, ph*0.62); ctx.rotate(0.6*armSwing); ctx.translate(-pw*0.73, -ph*0.62); rounded(pw*0.66, ph*0.60, pw*0.10, ph*0.08, 8); ctx.restore();
-    // ноги
     const step = Math.sin(t*20); const lift = inAir ? -4 : 0; ctx.fillStyle = '#2c2c2c'; ctx.beginPath(); ctx.ellipse(pw*0.44, ph*0.94+lift + step*1.0, 5.5, 3.2, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(pw*0.56, ph*0.94+lift - step*1.0, 5.5, 3.2, 0, 0, Math.PI*2); ctx.fill();
     ctx.restore();
     function rounded(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r); ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath(); ctx.fill(); }
@@ -279,7 +359,8 @@
   function releaseJump(){ player.jumpHeld = false; }
 
   // Оригинальные обработчики (эти работали стабильно)
-  startBtn.addEventListener('click', startGame);
+  // Старт игры только после готовности ассетов
+  startBtn.addEventListener('click', ()=>{ if(!assetsReady) return; startGame(); });
   restartBtn.addEventListener('click', startGame);
   window.addEventListener('keydown', e => { if(e.code==='Space'||e.code==='ArrowUp'){ if(!player.jumpHeld) requestJump(); } if(e.code==='KeyR' && !started){ startGame(); } });
   window.addEventListener('keyup', e => { if(e.code==='Space'||e.code==='ArrowUp') releaseJump(); });
@@ -313,89 +394,8 @@
 
     V.particles.length = 0; initSky();
   }
+  initAssets(); // загружаем ассеты (кнопка Start станет активной после загрузки)
   planNextSpawn(); initSky();
-
-  // ============ SAFE PATCH A: добавляем новые визуальные функции и переопределяем draw ============
-  // Новый многоуровневый фон + «море» на горизонте. Геймплей не меняется.
-  function drawParallaxBackdrop(){
-    // дальние «горы» — холоднее и светлее
-    drawMountainsLayer(0.10, '#a7c9ea', 0.55);
-    // средние «холмы» — насыщеннее
-    drawMountainsLayer(0.16, '#7fb1e0', 0.95);
-    // ближний мягкий гребень — чуть зеленее, создаёт глубину
-    ctx.save();
-    ctx.fillStyle = '#8ac6a0';
-    ctx.globalAlpha = 0.9;
-    const base = H*0.66;
-    ctx.beginPath();
-    ctx.moveTo(0,H);
-    ctx.lineTo(0,base);
-    for(let x=0; x<=W; x+=6){
-      const y = base - 10 - Math.sin((x + V.t*80)*0.015)*6 - Math.cos((x*0.5 + V.t*30)*0.01)*3;
-      ctx.lineTo(x,y);
-    }
-    ctx.lineTo(W,H);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawSea(gy){
-    const top = Math.min(gy - 42, H*0.74);
-    const height = Math.max(16, Math.min(40, gy - top - 8));
-    if(height < 12) return;
-
-    const water = ctx.createLinearGradient(0, top, 0, top+height);
-    water.addColorStop(0, '#b8e7ff');
-    water.addColorStop(1, '#79c7ff');
-    ctx.fillStyle = water;
-    ctx.fillRect(0, top, W, height);
-
-    const layers = [ {amp: 6, freq: 0.018, speed: 40, alpha: 0.25}, {amp: 4, freq: 0.026, speed: 65, alpha: 0.35}, {amp: 2.5, freq: 0.038, speed: 90, alpha: 0.45} ];
-    for(const L of layers){
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(0, top + height*0.5);
-      for(let x=0; x<=W; x+=4){
-        const y = top + height*0.5 + Math.sin((x + V.t*L.speed)*L.freq) * L.amp;
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(W, top+height);
-      ctx.lineTo(0, top+height);
-      ctx.closePath();
-      ctx.globalAlpha = L.alpha;
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  const __origDraw = draw; // сохранить исходную отрисовку (на всякий случай)
-  // Переопределяем draw, добавляя новые слои — геймплей не трогаем
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    const gy = groundY();
-
-    // Небо и задники
-    drawSkyGradient();
-    drawSun();
-    drawParallaxBackdrop();
-    drawClouds();
-
-    // «Море/река» на горизонте
-    drawSea(gy);
-
-    // Земля
-    drawGround(gy);
-
-    // Препятствия
-    for(const o of obstacles){ if(o.type==='pit'){ continue; } else if(o.type==='box'){ drawCrate(o.x,o.y,o.w,o.h); } else { drawDrone(o.x,o.y,o.w,o.h); } }
-
-    // Игрок и частицы
-    drawPlayer(gy);
-    drawDust();
-  }
-
 })();
 </script>
 </body>
