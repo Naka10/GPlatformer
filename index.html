@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Бесконечный раннер — эталон (EndlessRunner_v1_Etalon)</title>
 <style>
-  /* Вёрстка и меню — без изменений по геймплею */
+  /* Базовая вёрстка (геймплей не трогаем) */
   html, body { height: 100%; margin: 0; background: #24283b; color: #e7e9ee; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; }
   canvas { background: linear-gradient(#84c8ff, #b8e1ff 55%, #f5f5f7 55%); width: 100vw; height: 100vh; display: block; touch-action: manipulation; }
   .hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; pointer-events: none; z-index: 3; }
@@ -13,7 +13,7 @@
   .center { position: fixed; inset: 0; display: grid; place-items: center; z-index: 2; }
   .overlay { text-align:center; background: rgba(0,0,0,0.45); padding:16px 22px; border-radius:14px; border:1px solid rgba(255,255,255,0.12); }
 
-  /* === Красивое главное меню (НЕ меняет геймплей) === */
+  /* Главное меню */
   #menu { padding: 24px; }
   .menu-card { width: min(780px, 92vw); padding: 28px; border-radius: 20px; backdrop-filter: blur(10px); background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 20px 70px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18); color: #0a0a0a; }
   .menu-inner { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; align-items: center; }
@@ -151,10 +151,20 @@
 
   function makeBoxTexture(size=64){ const c=document.createElement('canvas'); c.width=c.height=size; const cx=c.getContext('2d'); const g=cx.createLinearGradient(0,0,0,size); g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43'); cx.fillStyle=g; cx.fillRect(0,0,size,size); cx.strokeStyle='#6e4b29'; cx.lineWidth=4; cx.strokeRect(2,2,size-4,size-4); cx.strokeStyle='rgba(0,0,0,0.28)'; cx.lineWidth=3; cx.beginPath(); cx.moveTo(6,size*0.33); cx.lineTo(size-6,size*0.33); cx.moveTo(6,size*0.66); cx.lineTo(size-6,size*0.66); cx.moveTo(size*0.33,6); cx.lineTo(size*0.33,size-6); cx.moveTo(size*0.66,6); cx.lineTo(size*0.66,size-6); cx.stroke(); return c; }
 
-  function loadImages(manifest){ const entries=Object.entries(manifest).filter(([_,src])=>!!src); const jobs=entries.map(([k,src])=>new Promise(res=>{ const im=new Image(); im.onload=()=>{ IMG[k]=im; res({key:k,ok:true}); }; im.onerror=()=>{ console.warn('[assets] image fail',src); res({key:k,ok:false}); }; im.src=src; })); return Promise.all(jobs); }
+  function loadImages(manifest){
+    const entries = Object.entries(manifest).filter(([_,src])=> !!src);
+    const jobs = entries.map(([k,src])=> new Promise((res)=>{
+      const im = new Image();
+      const bust = (src.includes('?') ? '&' : '?') + 'cb=' + (ASSET_VER || 'v') + '-' + Date.now();
+      im.onload  = ()=>{ IMG[k]=im; res({key:k, ok:true}); };
+      im.onerror = ()=>{ console.warn('[assets] image fail', src); res({key:k, ok:false}); };
+      im.src = src + bust;
+    }));
+    return Promise.all(jobs);
+  }
   function loadSounds(manifest){ const entries=Object.entries(manifest).filter(([_,src])=>!!src); const jobs=entries.map(([k,src])=>fetch(src).then(r=>{ if(!r.ok) throw 0; return r.blob(); }).then(b=>{ SND[k]=new Audio(URL.createObjectURL(b)); }).catch(()=>{})); return Promise.all(jobs); }
 
-  function buildSprites(){ if(IMG.player_run) SPRITES.player=new AnimatedSprite(IMG.player_run,6,12); if(IMG.player_jump) SPRITES.playerJump=new AnimatedSprite(IMG.player_jump,1,1); if(IMG.box) SPRITES.box=IMG.box; if(IMG.drone) SPRITES.drone=IMG.drone; console.log('[assets] built:',{box:!!SPRITES.box,drone:!!SPRITES.drone,player_run:!!SPRITES.player,player_jump:!!SPRITES.playerJump,box_natural:IMG.box?IMG.box.width+'x'+IMG.box.height:null}); updateDebugBadge(); }
+  function buildSprites(){ if(IMG.player_run) SPRITES.player=new AnimatedSprite(IMG.player_run,6,12); if(IMG.player_jump) SPRITES.playerJump=new AnimatedSprite(IMG.player_jump,1,1); if(IMG.box) SPRITES.box=IMG.box; if(IMG.drone) SPRITES.drone=IMG.drone; console.log('[assets] built:', { box: !!SPRITES.box, drone: !!SPRITES.drone, player_run: !!SPRITES.player, player_jump: !!SPRITES.playerJump, box_natural: IMG.box? (IMG.box.width+'x'+IMG.box.height): null, box_src: ASSETS.images.box }); updateDebugBadge(); }
 
   function initAssets(){ if(startBtn){ startBtn.style.pointerEvents='none'; startBtn.style.opacity='0.6'; startBtn.textContent='Загрузка…'; } const imagesForLoad={...ASSETS.images}; console.log('[assets] paths',imagesForLoad); return Promise.all([loadImages(imagesForLoad), loadSounds(ASSETS.sounds)]) .then(()=>{ if(!IMG.box){ console.warn('[assets] no external box → using procedural'); IMG.box=makeBoxTexture(64);} buildSprites(); assetsReady=true; }) .catch(e=>{ console.warn('[assets] fallback',e?.message); assetsReady=true; }) .finally(()=>{ if(startBtn){ startBtn.textContent='▶ Старт'; startBtn.style.pointerEvents='auto'; startBtn.style.opacity='1'; } updateDebugBadge(); }); }
 
@@ -196,7 +206,29 @@
   function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.scale(c.s,c.s); ctx.globalAlpha=c.a; ctx.fillStyle='#fff'; blobby(0,0,42); blobby(28,-10,26); blobby(-28,-6,24); blobby(12,-18,18); ctx.restore(); }
   function blobby(x,y,r){ ctx.beginPath(); ctx.ellipse(x,y,r*1.4,r,0,0,Math.PI*2); ctx.fill(); }
   function drawGround(gy){ const gg=ctx.createLinearGradient(0,gy-18,0,gy+40); gg.addColorStop(0,'#3a913a'); gg.addColorStop(1,'#256a25'); ctx.fillStyle=gg; ctx.fillRect(0,gy,W,H-gy); ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(0,gy-4,W,4); ctx.fillStyle='rgba(255,255,255,0.08)'; for(let x=-(V.t*40%40); x<W; x+=40){ ctx.fillRect(x,gy-8,24,4); } }
-  function drawCrate(x,y,w,h){ if(SPRITES.box){ ctx.drawImage(SPRITES.box,x,y,w,h); return; } ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.strokeStyle='#6e4b29'; ctx.lineWidth=3; ctx.strokeRect(x+1.5,y+1.5,w-3,h-3); ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x+6,y+h*0.33); ctx.lineTo(x+w-6,y+h*0.33); ctx.moveTo(x+6,y+h*0.66); ctx.lineTo(x+w-6,y+h*0.66); ctx.moveTo(x+w*0.33,y+6); ctx.lineTo(x+w*0.33,y+h-6); ctx.moveTo(x+w*0.66,y+6); ctx.lineTo(x+w*0.66,y+h-6); ctx.stroke(); ctx.restore(); }
+  function drawCrate(x,y,w,h){
+    if (SPRITES.box) {
+      if (ctx.imageSmoothingEnabled !== false) ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(SPRITES.box, x, y, w, h);
+      // временная метка (можно удалить): уголок 4x4 показывает drawImage
+      ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle='#ff00ff'; ctx.fillRect(x, y, 4, 4); ctx.restore();
+      return;
+    }
+    // Фолбэк — векторный ящик
+    ctx.save();
+    const g=ctx.createLinearGradient(x,y,x,y+h);
+    g.addColorStop(0,'#deb075'); g.addColorStop(1,'#b27a43');
+    ctx.fillStyle=g; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='#6e4b29'; ctx.lineWidth=3; ctx.strokeRect(x+1.5,y+1.5,w-3,h-3);
+    ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(x+6,y+h*0.33); ctx.lineTo(x+w-6,y+h*0.33);
+    ctx.moveTo(x+6,y+h*0.66); ctx.lineTo(x+w-6,y+h*0.66);
+    ctx.moveTo(x+w*0.33,y+6); ctx.lineTo(x+w*0.33,y+h-6);
+    ctx.moveTo(x+w*0.66,y+6); ctx.lineTo(x+w*0.66,y+h-6);
+    ctx.stroke();
+    ctx.restore();
+  }
   function drawDrone(x,y,w,h){ if(SPRITES.drone){ ctx.drawImage(SPRITES.drone,x,y,w,h); return; } ctx.save(); const g=ctx.createLinearGradient(x,y,x,y+h); g.addColorStop(0,'#96a3b8'); g.addColorStop(1,'#647087'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); ctx.fillStyle='#2aff7b'; const blink=(Math.sin(V.t*8)+1)*0.5; const ey=y+h*0.5-3; ctx.fillRect(x+6+blink,ey,8,4); ctx.fillRect(x+w-14-blink,ey,8,4); ctx.globalAlpha=0.6; ctx.fillStyle='#dfe6f5'; const spin=(V.t*16)%1; const bw=w*0.7,bh=3; ctx.fillRect(x+(w-bw)/2,y-8,bw*(0.6+0.4*Math.abs(Math.sin(spin))),bh); ctx.fillRect(x+(w-bw)/2,y+h+5,bw*(0.6+0.4*Math.abs(Math.cos(spin))),bh); ctx.restore(); }
   function drawPlayer(gy){ const px=player.x, py=player.y, pw=player.w, ph=player.h, t=V.t; const inAir=!player.onGround; // тень
     ctx.globalAlpha=0.28; ctx.fillStyle='#000'; const shw=18*(1-Math.min(1,(gy-(player.y+player.h))/48)); ctx.beginPath(); ctx.ellipse(px+pw*0.5,gy+2,Math.max(8,shw),6,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; // спрайты
