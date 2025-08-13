@@ -259,7 +259,8 @@
   function reset(){ score=0; scoreBox.textContent='Счёт: '+score; obstacles.length=0; speed=START_SPEED; Object.assign(player,{ x:PLAYER.X, y:groundY()-player.h, w:PLAYER.W, h:PLAYER.H, vy:0, onGround:true, coyote:0, jumpBuf:0, jumpHeld:false }); obstacles.length=0; let acc=0; const targetPreGenDist=Math.max(1200,Math.floor(W*1.8)); planNextSpawn(); while(acc<targetPreGenDist){ const gap=Math.min(nextSpawnDist,INITIAL_MAX_GAP); distSinceSpawn=nextSpawnDist; spawnObstacle(); const o=obstacles[obstacles.length-1]; o.x=(W+40)+acc; acc+=gap; } if(obstacles.length){ const ahead=Math.max(MIN_SAFE_GAP,260); const delta=obstacles[0].x-(player.x+ahead); for(const o of obstacles) o.x-=delta; } V.particles.length=0; initSky(); }
 
   // Инициализация
-  initAssets(); planNextSpawn(); initSky(); updateDebugBadge();
+  initAssets(); planNextSpawn(); initSky(); 
+  //updateDebugBadge();
 })();
 </script>
 </body>
